@@ -6,5 +6,5 @@ so when I start porting it I understand what its trying to do [this is the last 
 ### **day 2**: 24/5/26
 I started some of the work on it by adding the message type which represents the shape of the message to be sent and received 
 I worked on the header for now added a type for it and functions to work with it (encode ,decode , print) 
-the guide i was following was still stuck at the explaining the system point and i think i know enough to start working so i jumped to 
-the section that specifies protocol details and conventions on how to store and manage DNS data
+the guide i was following was still stuck at the explaining the system point and i think i know enough to start working so I jumped to 
+the section that specifies protocol details and conventions on how to store and manage DNS data [here is the link where I stopped](http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm)
