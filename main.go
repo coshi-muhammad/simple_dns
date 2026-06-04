@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/netip"
 	"strings"
 )
 
@@ -43,12 +42,21 @@ const (
 	// added for completion posibly removed if not implemented
 )
 
+type RRType int
+
+const (
+	ADDRESS           RRType = 1
+	NAME_SERVER       RRType = 2
+	CANONICAL_NAME    RRType = 5
+	START_OF_AUTORITY RRType = 6
+	POINTER           RRType = 12
+	MAIL_EXCHANGE     RRType = 15
+	TEXT              RRType = 16
+)
+
 // types
 type NameSpace struct {
-	label      string
-	address    netip.Addr
-	sub_spaces []*NameSpace
-} //used to store the database information corelating a domain with an ip address
+} //TODO: used to store the database information corelating a domain with an ip address decied its shape later
 
 type MessageHeader struct {
 	id          uint16
@@ -119,36 +127,49 @@ type Question struct {
 	Qclass uint16
 }
 
-func decodeQuestion(question_raw []byte) (Question, int) {
-	q := Question{}
-	buffer_size := len(question_raw)
-	Qname := make([]string, 0)
+func decodeName(name_raw []byte) ([]string, int) {
+	name := make([]string, 0)
 	index := 0
-	for question_raw[index] != 0 && index < buffer_size {
-		label_size := question_raw[index]
+	for name_raw[index] != 0 && index < len(name_raw) {
+		label_size := name_raw[index]
 		var label_builder strings.Builder
 		for range label_size {
 			index++
-			label_builder.WriteRune(rune(question_raw[index]))
+			label_builder.WriteRune(rune(name_raw[index]))
 		}
-		Qname = append(Qname, label_builder.String())
+		name = append(name, label_builder.String())
 		index++
 	}
+
+	return name, index + 1
+}
+
+func encodeName(name []string) []byte {
+	name_raw := make([]byte, 512)
+	for _, label := range name {
+		label_size := byte(len(label))
+		label_raw := []byte(label)
+		name_raw = append(name_raw, label_size)
+		name_raw = append(name_raw, label_raw...)
+	}
+	name_raw = append(name_raw, byte(0))
+	return name_raw
+}
+
+func decodeQuestion(q_raw []byte) (Question, int) {
+	q := Question{}
+	Qname, index := decodeName(q_raw)
 	q.Qname = Qname
-	q.Qtype = binary.BigEndian.Uint16(question_raw[index+1 : index+3])
-	q.Qclass = binary.BigEndian.Uint16(question_raw[index+3 : index+5])
-	return q, index + 5
+	q.Qtype = binary.BigEndian.Uint16(q_raw[index : index+2])
+	index += 2
+	q.Qclass = binary.BigEndian.Uint16(q_raw[index : index+2])
+	index += 2
+	return q, index
 }
 
 func encodeQuestion(q *Question) []byte {
-	buffer := make([]byte, 0)
-	for _, label := range q.Qname {
-		label_size := byte(len(label))
-		label_raw := []byte(label)
-		buffer = append(buffer, label_size)
-		buffer = append(buffer, label_raw...)
-	}
-	buffer = append(buffer, byte(0))
+	buffer := make([]byte, 4096)
+	buffer = append(buffer, encodeName(q.Qname)...)
 	buffer = binary.BigEndian.AppendUint16(buffer, q.Qtype)
 	buffer = binary.BigEndian.AppendUint16(buffer, q.Qclass)
 	return buffer
@@ -165,11 +186,63 @@ func printQuestion(q *Question) {
 	fmt.Println("Class: ", q.Qclass)
 }
 
-type Message struct {
-	header    MessageHeader
-	questions []Question
-	//TODO: add the other sections
+type ResourceRecord struct {
+	Name     []string
+	Type     uint16
+	Class    uint16
+	TTL      uint32
+	RDLength uint16
+	RDData   []byte
+}
 
+func decodeResourceRecord(rr_raw []byte) (ResourceRecord, int) {
+	rr := ResourceRecord{}
+	Qname, index := decodeName(rr_raw)
+	rr.Name = Qname
+	rr.Type = binary.BigEndian.Uint16(rr_raw[index : index+2])
+	index += 2
+	rr.Class = binary.BigEndian.Uint16(rr_raw[index : index+2])
+	index += 2
+	rr.TTL = binary.BigEndian.Uint32(rr_raw[index : index+4])
+	index += 4
+	rr.RDLength = binary.BigEndian.Uint16(rr_raw[index : index+2])
+	index += 2
+	rr.RDData = make([]byte, rr.RDLength)
+	copy(rr.RDData, rr_raw[index:index+int(rr.RDLength)])
+	index += int(rr.RDLength)
+	return rr, index
+}
+
+func encodeResourceRecord(rr *ResourceRecord) []byte {
+	rr_raw := make([]byte, 4096)
+	rr_raw = append(rr_raw, encodeName(rr.Name)...)
+	rr_raw = binary.BigEndian.AppendUint16(rr_raw, rr.Type)
+	rr_raw = binary.BigEndian.AppendUint16(rr_raw, rr.Class)
+	rr_raw = binary.BigEndian.AppendUint32(rr_raw, rr.TTL)
+	rr_raw = binary.BigEndian.AppendUint16(rr_raw, rr.RDLength)
+	rr_raw = append(rr_raw, rr.RDData...)
+	return rr_raw
+}
+
+func printResourceRecord(rr *ResourceRecord) {
+	fmt.Println("Resource Record: ")
+	fmt.Print("Name: ")
+	for _, label := range rr.Name {
+		fmt.Printf("%s.", label)
+	}
+	fmt.Print("\n")
+	fmt.Println("Type: ", rr.Type)
+	fmt.Println("Class: ", rr.Class)
+	fmt.Println("Time to Live: ", rr.TTL)
+	fmt.Println("Record Data Section Length: ", rr.RDLength)
+}
+
+type Message struct {
+	header      MessageHeader
+	questions   []Question
+	answers     []ResourceRecord
+	authorities []ResourceRecord
+	additionals []ResourceRecord
 } //used to represent the shape of a dns message when sending or reseaving
 
 func decodeMessage(message_raw []byte) Message {
@@ -182,19 +255,59 @@ func decodeMessage(message_raw []byte) Message {
 		message.questions = append(message.questions, question)
 		index += int(size)
 	}
-	//TODO: add other sections
+	for range message.header.an_count {
+		answer, size := decodeResourceRecord(message_raw[index:])
+		message.answers = append(message.answers, answer)
+		index += int(size)
+	}
+	for range message.header.ns_count {
+		authority, size := decodeResourceRecord(message_raw[index:])
+		message.authorities = append(message.authorities, authority)
+		index += int(size)
+	}
+	for range message.header.ar_count {
+		additional, size := decodeResourceRecord(message_raw[index:])
+		message.additionals = append(message.additionals, additional)
+		index += int(size)
+	}
 	return message
 }
 func encodeMessage(message Message) []byte {
-	message_raw := make([]byte, 0)
+	message_raw := make([]byte, 4096)
 	message_raw = append(message_raw, encodeHeader(&message.header)...)
 	for _, question := range message.questions {
 		message_raw = append(message_raw, encodeQuestion(&question)...)
 	}
-	//TODO: add other secitons
+	for _, answer := range message.answers {
+		message_raw = append(message_raw, encodeResourceRecord(&answer)...)
+	}
+	for _, authority := range message.authorities {
+		message_raw = append(message_raw, encodeResourceRecord(&authority)...)
+	}
+	for _, additional := range message.additionals {
+		message_raw = append(message_raw, encodeResourceRecord(&additional)...)
+	}
 	return message_raw
 }
-func printMessage() {
+func printMessage(message Message) {
+	fmt.Println("Message: ")
+	printHeader(&message.header)
+	for i, question := range message.questions {
+		fmt.Println("Question number ", i)
+		printQuestion(&question)
+	}
+	for i, answer := range message.answers {
+		fmt.Println("Answer number ", i)
+		printResourceRecord(&answer)
+	}
+	for i, authority := range message.authorities {
+		fmt.Println("Authority number ", i)
+		printResourceRecord(&authority)
+	}
+	for i, additional := range message.additionals {
+		fmt.Println("Additional number ", i)
+		printResourceRecord(&additional)
+	}
 
 }
 

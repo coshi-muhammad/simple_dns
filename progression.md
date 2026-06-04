@@ -8,3 +8,9 @@ I started some of the work on it by adding the message type which represents the
 I worked on the header for now added a type for it and functions to work with it (encode ,decode , print) 
 the guide i was following was still stuck at the explaining the system point and i think i know enough to start working so I jumped to 
 the section that specifies protocol details and conventions on how to store and manage DNS data [here is the link where I stopped](http://www.tcpipguide.com/free/t_DNSMessageHeaderandQuestionSectionFormat.htm)
+
+### **day 3**: 29/5/26 
+I'm getting the hang of it just implementing the spec finished the questions and at least the reading and writing seems to work
+correctly I need to implement the other sections and make a successful response then think of a way to store actual records and maybe 
+even load them from master files and after that a fun idea could be trying to optimize it to work well for a certain number of 
+requests that I will decide at some point. Anyways [here is where I stopped](http://www.tcpipguide.com/free/t_DNSMessageResourceRecordFieldFormats-2.htm)
