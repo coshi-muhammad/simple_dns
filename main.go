@@ -516,7 +516,6 @@ func responde(space NameSpace, message_raw []byte) []byte {
 		}
 	}
 	printResourceRecord(&message.additionals[0])
-	//BUG: the message is malformed when being encoded look into what could be the problem
 	message.header.an_count = uint16(len(message.answers))
 	return encodeMessage(message)
 }
