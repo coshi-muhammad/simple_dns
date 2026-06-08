@@ -1,4 +1,10 @@
 all: 
 	go run main.go
+
+debug:
+	go build -gcflags="all=-N -l" main.go
+	gdlv debug
+
+
 test: 
-	dig @127.0.0.1 -p 8080 hello.com
+	./test.sh
